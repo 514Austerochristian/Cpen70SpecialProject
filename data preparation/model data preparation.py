@@ -253,7 +253,7 @@ def main():
         numeric_cols = df.select_dtypes(include=['float64', 'int64', 'uint8']).columns
         df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
         print("✅ Features normalized using MinMaxScaler")
-        
+
         # Create output directory
         output_dir = Path('data/processed')
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -268,6 +268,14 @@ def main():
         X, y = create_sequences(df, 'WQI', look_back=12)
         print(f"✅ Created {len(X)} sequences with look-back window of 12")
         
+        # Create sequences for water quality index (WQI)
+        if 'WQI' not in df.columns:
+            raise KeyError("WQI column not found in the DataFrame. Ensure WQI is calculated before creating sequences.")
+        print(f"\n📊 Creating sequences for WQI...")
+        if 'WQI' in df.columns:
+            X, y = create_sequences(df, 'WQI', look_back=12)
+            print(f"✅ Created {len(X)} sequences for WQI with look-back window of 12")
+
         # Split data into train/test sets (80/20 split)
         print(f"\n✂️ Splitting data into train/test sets (80/20 split)...")
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)

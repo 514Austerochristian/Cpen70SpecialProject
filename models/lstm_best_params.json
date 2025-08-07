@@ -1,0 +1,18 @@
+{
+  "hyperparameters": {
+    "lstm_units_1": 128,
+    "return_sequences_1": false,
+    "lstm_dropout_1": 0.1,
+    "add_second_lstm": false,
+    "dense_units": 128,
+    "dense_dropout": 0.30000000000000004,
+    "learning_rate": 0.00024965441543896153
+  },
+  "best_batch_size": 16,
+  "metrics": {
+    "mse": 0.1519767940044403,
+    "rmse": 0.38984201159500537,
+    "mae": 0.3819703161716461,
+    "r2": 0.03288823366165161
+  }
+}

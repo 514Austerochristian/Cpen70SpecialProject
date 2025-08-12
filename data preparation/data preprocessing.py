@@ -71,12 +71,30 @@ def clean_and_normalize(file_path):
         print(f"✅ Successfully loaded file with {len(df)} rows and {len(df.columns)} columns")
     except Exception as e:
         print(f"❌ Error loading file: {e}")
-        return None, None
+        return None, None, None
     
     # Clean column names
     df.columns = df.columns.str.strip()
     
     print(f"📊 Available columns: {list(df.columns)}")
+
+    # Store original location information if it exists
+    location_info = None
+    has_location = False
+    location_column_names = ["Location", "location", "LOCATION", "Site", "site", "SITE"]
+    actual_location_column = None
+    
+    for loc_col in location_column_names:
+        if loc_col in df.columns:
+            actual_location_column = loc_col
+            has_location = True
+            # Create a mapping of index to location for later restoration
+            location_info = df[loc_col].copy()
+            print(f"📍 Found location column: '{loc_col}' with {df[loc_col].nunique()} unique locations")
+            break
+    
+    if not has_location:
+        print("📍 No location column found - will process as single dataset")
 
     # TASK 4: ENSURE CONSISTENT TIMESTAMP FORMAT
     print("📅 Task 4: Converting timestamps to standardized format...")
@@ -136,8 +154,6 @@ def clean_and_normalize(file_path):
             except ValueError:
                 print("   ❌ Please enter a valid number or 'skip'")
 
-    location_column = "Location"
-
     # Drop rows with missing timestamp (if timestamp exists)
     if "timestamp" in df.columns:
         initial_rows = len(df)
@@ -145,28 +161,35 @@ def clean_and_normalize(file_path):
         dropped_timestamp = initial_rows - len(df)
         if dropped_timestamp > 0:
             print(f"   ⚠️ Removed {dropped_timestamp} rows with invalid timestamps")
+            # Update location info after dropping rows
+            if has_location:
+                location_info = location_info[df.index]
 
     # TASK 5: CHECK AND CORRECT DATA TYPES
     print("🔢 Task 5: Checking and correcting data types...")
 
     # Process data by location if Location column exists
-    if location_column in df.columns:
-        df.dropna(subset=[location_column], inplace=True)
+    if has_location:
+        # Remove any rows where location is missing
+        df.dropna(subset=[actual_location_column], inplace=True)
+        location_info = location_info[df.index]
+        
         cleaned_by_location = {}
         normalized_by_location = {}
+        location_mapping = {}  # Store original location for each processed row
 
-        for location in df[location_column].unique():
+        for location in df[actual_location_column].unique():
             print(f"\n📍 Processing location: {location}")
-            subset = df[df[location_column] == location].copy()
+            subset = df[df[actual_location_column] == location].copy()
+            original_indices = subset.index.tolist()
 
-            # Keep Location column for later merging
-            location_info = subset[location_column].iloc[0]
-            subset.drop(columns=[location_column], inplace=True)
+            # Store location mapping
+            location_mapping[location] = location
 
             # Convert to numeric data types (Task 5)
             numeric_conversions = 0
             for col in subset.columns:
-                if col != "timestamp":
+                if col not in ["timestamp", actual_location_column]:
                     original_dtype = subset[col].dtype
                     subset[col] = pd.to_numeric(subset[col], errors="coerce")
                     if original_dtype != subset[col].dtype:
@@ -179,45 +202,74 @@ def clean_and_normalize(file_path):
             if "timestamp" in subset.columns:
                 print("🕐 Task 1: Handling gaps in time series using time-based patterns...")
 
+                # Preserve location before setting timestamp as index
+                subset_location = subset[actual_location_column].iloc[0]
+                
                 # Set timestamp as index and resample to daily frequency
-                # This creates a continuous time series and handles gaps
-                subset = subset.set_index("timestamp").resample("D").mean()
+                subset_work = subset.drop(columns=[actual_location_column]).set_index("timestamp").resample("D").mean()
 
                 # Count gaps that were filled
-                gaps_filled = subset.isnull().sum().sum()
+                gaps_filled = subset_work.isnull().sum().sum()
                 if gaps_filled > 0:
                     print(f"   📈 Identified {gaps_filled} gaps in time series data")
+                
+                # Add location back
+                subset_work['Location'] = subset_location
             else:
                 print("   ⚠️ No timestamp column found, skipping time series gap handling")
+                subset_work = subset.copy()
+                if actual_location_column != 'Location':
+                    subset_work.rename(columns={actual_location_column: 'Location'}, inplace=True)
 
             # TASK 2: FILL REMAINING MISSING VALUES
             print("🔄 Task 2: Filling remaining missing values using forward/backward fill...")
 
+            # Separate location column before filling
+            if 'Location' in subset_work.columns:
+                location_col = subset_work['Location'].copy()
+                subset_for_filling = subset_work.drop(columns=['Location'])
+            else:
+                location_col = pd.Series([location] * len(subset_work))
+                subset_for_filling = subset_work.copy()
+
             # Forward fill first (use previous values)
-            subset_filled = subset.ffill()
+            subset_filled = subset_for_filling.ffill()
             # Then backward fill for any remaining NaNs at the beginning
             subset_filled = subset_filled.bfill()
 
+            # Add location back
+            subset_filled['Location'] = location_col
+
             # Count how many values were filled
-            filled_values = (subset.isnull() & subset_filled.notnull()).sum().sum()
+            filled_values = (subset_for_filling.isnull() & subset_filled.drop(columns=['Location']).notnull()).sum().sum()
             if filled_values > 0:
                 print(f"   ✓ Filled {filled_values} missing values using forward/backward fill")
 
-            # Drop columns that still have all NaN values
+            # Drop columns that still have all NaN values (except Location)
             subset_clean = subset_filled.dropna(axis=1, how="all")
+            # Ensure Location column is preserved even if it was dropped
+            if 'Location' not in subset_clean.columns:
+                subset_clean['Location'] = location_col
+            
             dropped_cols = len(subset_filled.columns) - len(subset_clean.columns)
+            if 'Location' not in subset_filled.columns:
+                dropped_cols += 1  # Account for added Location column
             if dropped_cols > 0:
                 print(f"   ⚠️ Dropped {dropped_cols} columns with insufficient data")
 
-            # Skip if empty after cleaning
-            if subset_clean.empty:
-                print(f"   ❌ Skipping location '{location}' — no valid data after cleaning")
+            # Skip if empty after cleaning (but preserve location info)
+            if subset_clean.drop(columns=['Location']).empty:
+                print(f"   ❌ Skipping location '{location}' — no valid numeric data after cleaning")
+                # Still create a minimal entry to preserve location
+                minimal_entry = pd.DataFrame({'Location': [location]})
+                cleaned_by_location[location] = minimal_entry
+                normalized_by_location[location] = minimal_entry.copy()
                 continue
 
             # TASK 3: DETECT AND REMOVE OUTLIERS
             print("🎯 Task 3: Detecting and removing outliers (>3 standard deviations)...")
 
-            # Only apply outlier detection to numeric columns
+            # Only apply outlier detection to numeric columns (exclude Location)
             numeric_cols = subset_clean.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:
                 # Calculate z-scores to identify outliers
@@ -225,26 +277,28 @@ def clean_and_normalize(file_path):
                 outlier_mask = (z_scores < 3).all(axis=1)
 
                 outliers_removed = len(subset_clean) - outlier_mask.sum()
-                subset_clean = subset_clean[outlier_mask]
+                
+                # Apply outlier filter but keep Location column
+                subset_clean_filtered = subset_clean[outlier_mask].copy()
 
                 if outliers_removed > 0:
                     print(f"   ✓ Removed {outliers_removed} outlier data points")
+                
+                subset_clean = subset_clean_filtered
             else:
                 print("   ⚠️ No numeric columns found for outlier detection")
 
-            # Check if empty after outlier removal
-            if subset_clean.empty:
-                print(f"   ❌ Skipping location '{location}' — no data after outlier filtering")
-                continue
+            # Ensure we still have some data (preserve location even if no numeric data)
+            if len(subset_clean) == 0:
+                print(f"   ⚠️ No data points remaining for '{location}' after outlier removal - creating minimal entry")
+                subset_clean = pd.DataFrame({'Location': [location]})
 
-            # Add location back as a column
-            subset_clean['Location'] = location_info
-
-            # Normalize data using MinMaxScaler (excluding timestamp and location)
+            # Normalize data using MinMaxScaler (excluding Location)
             print("📊 Normalizing data to 0-1 scale...")
             scaler = MinMaxScaler()
             numeric_cols = subset_clean.select_dtypes(include=[np.number]).columns
             subset_normalized = subset_clean.copy()
+            
             if len(numeric_cols) > 0:
                 subset_normalized[numeric_cols] = scaler.fit_transform(subset_clean[numeric_cols])
                 print(f"   ✓ Normalized {len(numeric_cols)} numeric columns")
@@ -256,7 +310,7 @@ def clean_and_normalize(file_path):
 
             print(f"   ✅ Successfully processed location '{location}' with {len(subset_clean)} data points")
 
-        return cleaned_by_location, normalized_by_location
+        return cleaned_by_location, normalized_by_location, location_mapping
 
     else:  # Process entire dataframe if no Location column
         print("📊 Processing entire dataset (no location grouping)")
@@ -299,7 +353,7 @@ def clean_and_normalize(file_path):
 
         if df_clean.empty:
             print(f"   ❌ No valid data remaining after cleaning")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), {}
 
         # TASK 3: Detect and remove outliers
         print("🎯 Task 3: Detecting and removing outliers (>3 standard deviations)...")
@@ -318,7 +372,7 @@ def clean_and_normalize(file_path):
 
         if df_clean.empty:
             print(f"   ❌ No data remaining after outlier filtering")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), {}
 
         # Normalize data
         print("📊 Normalizing data to 0-1 scale...")
@@ -332,11 +386,11 @@ def clean_and_normalize(file_path):
             print("   ⚠️ No numeric columns found for normalization")
 
         print(f"   ✅ Successfully processed dataset with {len(df_clean)} data points")
-        return df_clean, df_normalized
+        return df_clean, df_normalized, {}
 
-def merge_datasets(water_data, climate_data, data_type="cleaned"):
+def merge_datasets(water_data, climate_data, water_locations, climate_locations, data_type="cleaned"):
     """
-    Merge water and climate datasets into a single dataframe
+    Merge water and climate datasets into a single dataframe while preserving location information
     """
     print(f"\n🔗 Merging {data_type} datasets...")
 
@@ -346,20 +400,37 @@ def merge_datasets(water_data, climate_data, data_type="cleaned"):
         combined_dataframes = []
 
         for location, water_df in water_data.items():
-            if not water_df.empty and not climate_data.empty:
+            if not water_df.empty:
                 # Reset index to make timestamp a column for merging
                 water_df_reset = water_df.reset_index()
-                climate_df_reset = climate_data.reset_index()
+                
+                # Ensure Location column exists
+                if 'Location' not in water_df_reset.columns:
+                    water_df_reset['Location'] = location
+                
+                if not climate_data.empty:
+                    climate_df_reset = climate_data.reset_index()
 
-                # Merge on timestamp if both have it
-                if 'timestamp' in water_df_reset.columns and 'timestamp' in climate_df_reset.columns:
-                    merged_df = pd.merge(water_df_reset, climate_df_reset,
-                                       on='timestamp', how='inner',
-                                       suffixes=('_water', '_climate'))
+                    # Merge on timestamp if both have it
+                    if 'timestamp' in water_df_reset.columns and 'timestamp' in climate_df_reset.columns:
+                        merged_df = pd.merge(water_df_reset, climate_df_reset,
+                                           on='timestamp', how='left',  # Use left join to preserve all water data
+                                           suffixes=('_water', '_climate'))
+                    else:
+                        # If no timestamp, add climate data as additional columns
+                        print(f"   ⚠️ No timestamp columns found, adding climate data as additional columns for {location}")
+                        # Add climate data as average values for this location
+                        climate_means = climate_df_reset.select_dtypes(include=[np.number]).mean()
+                        for col, value in climate_means.items():
+                            merged_df = water_df_reset.copy()
+                            merged_df[f'{col}_climate'] = value
                 else:
-                    # If no timestamp, just concatenate (less ideal)
-                    print(f"   ⚠️ No timestamp columns found, concatenating data for {location}")
-                    merged_df = pd.concat([water_df_reset, climate_df_reset], axis=1)
+                    # If no climate data, just use water data
+                    merged_df = water_df_reset.copy()
+
+                # Ensure Location column is preserved
+                if 'Location' not in merged_df.columns:
+                    merged_df['Location'] = location
 
                 # Add data source columns
                 merged_df['data_source'] = 'water_climate_combined'
@@ -384,7 +455,7 @@ def merge_datasets(water_data, climate_data, data_type="cleaned"):
             # Merge on timestamp if both have it
             if 'timestamp' in water_df_reset.columns and 'timestamp' in climate_df_reset.columns:
                 merged_df = pd.merge(water_df_reset, climate_df_reset,
-                                   on='timestamp', how='inner',
+                                   on='timestamp', how='left',
                                    suffixes=('_water', '_climate'))
             else:
                 # If no timestamp, just concatenate (less ideal)
@@ -397,6 +468,12 @@ def merge_datasets(water_data, climate_data, data_type="cleaned"):
 
             print("   ✅ Successfully merged water and climate data")
             return merged_df
+        elif not water_data.empty:
+            # If only water data exists
+            water_df_reset = water_data.reset_index()
+            water_df_reset['data_source'] = 'water_only'
+            water_df_reset['processing_stage'] = data_type
+            return water_df_reset
         else:
             return pd.DataFrame()
 
@@ -405,34 +482,54 @@ def merge_datasets(water_data, climate_data, data_type="cleaned"):
         print("📍 Combining location-based water and climate data...")
         combined_dataframes = []
 
-        # Get common locations
-        common_locations = set(water_data.keys()) & set(climate_data.keys())
-
-        for location in common_locations:
-            water_df = water_data[location]
-            climate_df = climate_data[location]
-
-            if not water_df.empty and not climate_df.empty:
+        # Process all water locations, matching with climate where available
+        for water_location, water_df in water_data.items():
+            if not water_df.empty:
                 # Reset index to make timestamp a column for merging
                 water_df_reset = water_df.reset_index()
-                climate_df_reset = climate_df.reset_index()
+                
+                # Ensure Location column exists
+                if 'Location' not in water_df_reset.columns:
+                    water_df_reset['Location'] = water_location
 
-                # Merge on timestamp if both have it
-                if 'timestamp' in water_df_reset.columns and 'timestamp' in climate_df_reset.columns:
-                    merged_df = pd.merge(water_df_reset, climate_df_reset,
-                                       on='timestamp', how='inner',
-                                       suffixes=('_water', '_climate'))
+                # Try to find matching climate data
+                climate_df = None
+                for climate_location, climate_df_candidate in climate_data.items():
+                    if climate_location == water_location and not climate_df_candidate.empty:
+                        climate_df = climate_df_candidate
+                        break
+
+                if climate_df is not None:
+                    # Reset index for climate data
+                    climate_df_reset = climate_df.reset_index()
+
+                    # Merge on timestamp if both have it
+                    if 'timestamp' in water_df_reset.columns and 'timestamp' in climate_df_reset.columns:
+                        merged_df = pd.merge(water_df_reset, climate_df_reset,
+                                           on='timestamp', how='left',
+                                           suffixes=('_water', '_climate'))
+                    else:
+                        # If no timestamp, add climate data as additional columns
+                        print(f"   ⚠️ No timestamp columns found, adding climate data as additional columns for {water_location}")
+                        merged_df = water_df_reset.copy()
+                        climate_means = climate_df_reset.select_dtypes(include=[np.number]).mean()
+                        for col, value in climate_means.items():
+                            merged_df[f'{col}_climate'] = value
                 else:
-                    # If no timestamp, just concatenate (less ideal)
-                    print(f"   ⚠️ No timestamp columns found, concatenating data for {location}")
-                    merged_df = pd.concat([water_df_reset, climate_df_reset], axis=1)
+                    # No matching climate data found, just use water data
+                    merged_df = water_df_reset.copy()
+                    print(f"   ⚠️ No matching climate data found for location: {water_location}")
+
+                # Ensure Location column is preserved
+                if 'Location' not in merged_df.columns:
+                    merged_df['Location'] = water_location
 
                 # Add data source columns
                 merged_df['data_source'] = 'water_climate_combined'
                 merged_df['processing_stage'] = data_type
 
                 combined_dataframes.append(merged_df)
-                print(f"   ✓ Merged data for location: {location}")
+                print(f"   ✓ Processed data for location: {water_location}")
 
         if combined_dataframes:
             return pd.concat(combined_dataframes, ignore_index=True)
@@ -440,7 +537,22 @@ def merge_datasets(water_data, climate_data, data_type="cleaned"):
             return pd.DataFrame()
 
     else:
-        print("   ⚠️ Cannot merge datasets due to incompatible data structures")
+        print("   ⚠️ Incompatible data structures, preserving water data with locations")
+        # Fallback: just return water data with preserved locations
+        if isinstance(water_data, dict):
+            combined_dataframes = []
+            for location, water_df in water_data.items():
+                if not water_df.empty:
+                    water_df_reset = water_df.reset_index()
+                    if 'Location' not in water_df_reset.columns:
+                        water_df_reset['Location'] = location
+                    water_df_reset['data_source'] = 'water_only'
+                    water_df_reset['processing_stage'] = data_type
+                    combined_dataframes.append(water_df_reset)
+            
+            if combined_dataframes:
+                return pd.concat(combined_dataframes, ignore_index=True)
+        
         return pd.DataFrame()
 
 def main():
@@ -461,7 +573,7 @@ def main():
     print("\n" + "="*60)
     print("🌊 PROCESSING WATER PARAMETERS DATA")
     print("="*60)
-    water_clean, water_scaled = clean_and_normalize(water_file)
+    water_clean, water_scaled, water_locations = clean_and_normalize(water_file)
 
     if water_clean is None:
         print("❌ Failed to process water data. Exiting.")
@@ -470,7 +582,7 @@ def main():
     print("\n" + "="*60)
     print("🌡️ PROCESSING CLIMATE PARAMETERS DATA")
     print("="*60)
-    climate_clean, climate_scaled = clean_and_normalize(climate_file)
+    climate_clean, climate_scaled, climate_locations = clean_and_normalize(climate_file)
 
     if climate_clean is None:
         print("❌ Failed to process climate data. Exiting.")
@@ -482,10 +594,10 @@ def main():
     print("="*60)
 
     # Merge cleaned data
-    cleaned_merged = merge_datasets(water_clean, climate_clean, "cleaned")
+    cleaned_merged = merge_datasets(water_clean, climate_clean, water_locations, climate_locations, "cleaned")
 
     # Merge normalized data
-    normalized_merged = merge_datasets(water_scaled, climate_scaled, "normalized")
+    normalized_merged = merge_datasets(water_scaled, climate_scaled, water_locations, climate_locations, "normalized")
 
     # Combine cleaned and normalized data into final dataset
     print("\n📊 Creating final combined dataset...")
@@ -517,6 +629,13 @@ def main():
         print("   ❌ No data available for final combination")
         return
 
+    # Ensure Location column is present and properly formatted
+    if 'Location' in final_combined_data.columns:
+        print(f"📍 Location column preserved with {final_combined_data['Location'].nunique()} unique locations")
+        print(f"   Locations: {sorted(final_combined_data['Location'].unique())}")
+    else:
+        print("⚠️ No Location column found in final data - this may indicate an issue with data processing")
+
     # Create sliding windows metadata and add to final dataset
     print("\n" + "="*60)
     print("🪟 TASK 7: PREPARING TIME-SERIES METADATA")
@@ -528,7 +647,7 @@ def main():
 
         # Sort by timestamp for proper sequence ordering
         if 'timestamp' in final_combined_data.columns:
-            final_combined_data = final_combined_data.sort_values('timestamp')
+            final_combined_data = final_combined_data.sort_values(['Location', 'timestamp'] if 'Location' in final_combined_data.columns else 'timestamp')
 
         # Add sequence information for sliding windows
         final_combined_data['sequence_id'] = range(len(final_combined_data))
@@ -548,73 +667,3 @@ def main():
         numeric_columns = final_combined_data.select_dtypes(include=[np.number]).columns
         final_combined_data['numeric_columns_count'] = len(numeric_columns)
         final_combined_data['scaling_method'] = 'MinMaxScaler_0_to_1'
-
-        print(f"   ✅ Documented scaling for {len(numeric_columns)} numerical columns")
-        print("   📊 All numerical values scaled using Min-Max Scaler (0-1 range)")
-
-    # Save the final combined dataset
-    print("\n" + "="*60)
-    print("💾 SAVING PROCESSED DATA")
-    print("="*60)
-
-    if not final_combined_data.empty:
-        # Create output directory if it doesn't exist
-        output_dir = Path("output")
-        output_dir.mkdir(exist_ok=True)
-        
-        output_file = output_dir / "processed_data.csv"
-        
-        # Save to CSV file
-        final_combined_data.to_csv(output_file, index=False)
-
-        print(f"✅ SUCCESSFULLY SAVED: {output_file}")
-        print(f"📊 Dataset shape: {final_combined_data.shape}")
-        print(f"📋 Total columns: {len(final_combined_data.columns)}")
-
-        # Show summary of what's included
-        if 'data_type' in final_combined_data.columns:
-            data_types = final_combined_data['data_type'].value_counts()
-            print("📈 Data breakdown:")
-            for dtype, count in data_types.items():
-                print(f"   - {dtype}: {count} rows")
-
-        if 'Location' in final_combined_data.columns:
-            locations = final_combined_data['Location'].nunique()
-            print(f"📍 Locations included: {locations}")
-
-        print("\n📋 Column summary:")
-        for i, col in enumerate(final_combined_data.columns, 1):
-            print(f"   {i:2d}. {col}")
-
-        print(f"\n📁 Output saved to: {output_file.absolute()}")
-
-    else:
-        print("❌ No data available for saving - processing failed")
-
-    print("\n🎉 PROCESSING COMPLETE!")
-    print("\nSUMMARY OF ALL TASKS COMPLETED:")
-    print("✅ Task 1: Handled missing values (gaps in time series)")
-    print("✅ Task 2: Filled remaining missing values with forward/backward fill")
-    print("✅ Task 3: Detected and removed outliers using z-score method")
-    print("✅ Task 4: Ensured consistent timestamp format")
-    print("✅ Task 5: Checked and corrected data types to numeric format")
-    print("✅ Task 6: Scaled numerical values using Min-Max Scaler (0-1 range)")
-    print("✅ Task 7: Prepared time-series metadata for sliding window generation")
-
-    print("\n📁 FINAL OUTPUT:")
-    print("   📄 processed_data.csv - Complete merged dataset with all processing stages")
-    print("       • Contains both cleaned and normalized data")
-    print("       • Includes water and climate parameters combined")
-    print("       • Ready for analysis and machine learning")
-    print("       • Includes metadata for time-series processing")
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\n⚠️ Process interrupted by user. Exiting...")
-        sys.exit(0)
-    except Exception as e:
-        print(f"\n❌ An unexpected error occurred: {e}")
-        print("Please check your input files and try again.")
-        sys.exit(1)

@@ -1,0 +1,22 @@
+{
+  "hyperparameters": {
+    "cnn_filters": 64,
+    "kernel_size": 3,
+    "cnn_dropout": 0.1,
+    "lstm_units": 64,
+    "lstm_dropout": 0.4,
+    "use_attention": false,
+    "dense_units": 32,
+    "dense_dropout": 0.4,
+    "learning_rate": 0.0004126407644629029,
+    "num_heads": 6,
+    "key_dim": 16
+  },
+  "best_batch_size": 32,
+  "metrics": {
+    "mse": 0.1523856520652771,
+    "rmse": 0.3903660488122361,
+    "mae": 0.3815966248512268,
+    "r2": 0.030286431312561035
+  }
+}

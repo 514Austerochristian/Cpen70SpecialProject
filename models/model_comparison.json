@@ -1,0 +1,63 @@
+{
+  "cnn": {
+    "hyperparameters": {
+      "cnn_filters_1": 96,
+      "kernel_size_1": 4,
+      "cnn_dropout_1": 0.1,
+      "cnn_filters_2": 128,
+      "kernel_size_2": 4,
+      "cnn_dropout_2": 0.1,
+      "dense_units": 64,
+      "dense_dropout": 0.30000000000000004,
+      "learning_rate": 0.0008478179273261338
+    },
+    "batch_size": 32,
+    "metrics": {
+      "mse": 0.15286767482757568,
+      "rmse": 0.39098295976624825,
+      "mae": 0.3843698799610138,
+      "r2": 0.027219057083129883
+    }
+  },
+  "lstm": {
+    "hyperparameters": {
+      "lstm_units_1": 128,
+      "return_sequences_1": false,
+      "lstm_dropout_1": 0.1,
+      "add_second_lstm": false,
+      "dense_units": 128,
+      "dense_dropout": 0.30000000000000004,
+      "learning_rate": 0.00024965441543896153
+    },
+    "batch_size": 16,
+    "metrics": {
+      "mse": 0.1519767940044403,
+      "rmse": 0.38984201159500537,
+      "mae": 0.3819703161716461,
+      "r2": 0.03288823366165161
+    }
+  },
+  "hybrid": {
+    "hyperparameters": {
+      "cnn_filters": 64,
+      "kernel_size": 3,
+      "cnn_dropout": 0.1,
+      "lstm_units": 64,
+      "lstm_dropout": 0.4,
+      "use_attention": false,
+      "dense_units": 32,
+      "dense_dropout": 0.4,
+      "learning_rate": 0.0004126407644629029,
+      "num_heads": 6,
+      "key_dim": 16
+    },
+    "batch_size": 32,
+    "metrics": {
+      "mse": 0.1523856520652771,
+      "rmse": 0.3903660488122361,
+      "mae": 0.3815966248512268,
+      "r2": 0.030286431312561035
+    }
+  },
+  "best_model": "lstm"
+}

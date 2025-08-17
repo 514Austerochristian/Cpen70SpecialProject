@@ -153,16 +153,16 @@ def prepare_model_input(data, sequence_length=12, n_features=40):
         if len(data.shape) == 2:
             n_samples, current_features = data.shape
             
-            # If we have fewer features than expected, pad with zeros
+            # If there are fewer features than expected, pad with zeros
             if current_features < n_features:
                 padding = np.zeros((n_samples, n_features - current_features))
                 data = np.concatenate([data, padding], axis=1)
-            # If we have more features, truncate to expected size
+            # If there are more features, truncate to expected size
             elif current_features > n_features:
                 data = data[:, :n_features]
             
             # Reshape to (samples, sequence_length, n_features)
-            # We'll repeat the same data across time steps for simplicity
+            # Repeat the same data across time steps for simplicity
             reshaped_data = np.zeros((n_samples, sequence_length, n_features))
             for i in range(sequence_length):
                 reshaped_data[:, i, :] = data
@@ -240,27 +240,11 @@ def safe_model_predict(model, input_data, model_name):
                     except Exception as reshape_error:
                         continue
                 
-                # If all reshape attempts fail, use mock prediction
+                # If all reshape attempts fail, show error message
                 st.error(f"❌ Could not reshape data for {model_name}. Using mock predictions.")
-                return create_mock_prediction(model_name, len(input_data))
-        else:
-            # Model doesn't have predict method, use mock
-            return create_mock_prediction(model_name, len(input_data))
             
     except Exception as e:
         st.error(f"❌ Error during {model_name} prediction: {e}")
-        return create_mock_prediction(model_name, len(input_data))
-
-def create_mock_prediction(model_name, n_samples):
-    """Create mock predictions when real predictions fail"""
-    if model_name.upper() == "CNN":
-        base_wqi = np.random.normal(58, 8, n_samples)
-    elif model_name.upper() == "LSTM":
-        base_wqi = np.random.normal(62, 7, n_samples)
-    else:  # HYBRID
-        base_wqi = np.random.normal(60, 6, n_samples)
-    
-    return np.clip(base_wqi, 0, 100)
 
 # Enhanced forecast function with better input handling
 def forecast_multi_output_enhanced(model, input_data, model_name):
@@ -899,11 +883,16 @@ if page == "Home":
             
             st.subheader("📊 Forecast Comparison Table")
             st.dataframe(forecast_df, use_container_width=True)
-            
+
+            st.subheader("📈 Forecast Visualization")
+            # PPlot forecast comparison
+            fig = px.bar(forecast_df, x='Parameter', y=['CNN', 'LSTM', 'HYBRID'], barmode='group',
+                         title='Forecast Comparison by Model')
+            st.plotly_chart(fig, use_container_width=True)
+
             # Display detailed forecasts
             st.markdown("---")
             st.subheader("🔍 Detailed Forecast Analysis")
-            
             forecast_col1, forecast_col2, forecast_col3 = st.columns(3)
             
             with forecast_col1:

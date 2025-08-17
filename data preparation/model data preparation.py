@@ -276,11 +276,13 @@ def main():
             X, y = create_sequences(df, 'WQI', look_back=12)
             print(f"✅ Created {len(X)} sequences for WQI with look-back window of 12")
 
-        # Split data into train/test sets (80/20 split)
-        print(f"\n✂️ Splitting data into train/test sets (80/20 split)...")
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
+        # Split data into train/evaluate/test sets (60/20/20 split)
+        print(f"\n✂️ Splitting data into train/evaluate/test sets (60/20/20 split)...")
+        X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, random_state=42)
+        X_eval, X_test, y_eval, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+
         print(f"✅ Training samples: {len(X_train)}")
+        print(f"✅ Evaluation samples: {len(X_eval)}")
         print(f"✅ Testing samples: {len(X_test)}")
         
         # Save arrays as float32

@@ -157,9 +157,6 @@ def create_sequences(data, target_col, look_back=12):
     """
     Create sequences for time series models (e.g., LSTM)
     """
-    # Drop the 'Location' column if it exists, as it's not a numerical feature for model input
-    if 'Location' in data.columns:
-        data = data.drop(columns=['Location'])
     
     X, y = [], []
     for i in range(len(data) - look_back):

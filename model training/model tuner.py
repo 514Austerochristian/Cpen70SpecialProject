@@ -96,7 +96,7 @@ def build_cnn_model(hp):
         layers.MaxPooling1D(pool_size=2),
         layers.Dropout(hp.Float('cnn_dropout_1', min_value=0.1, max_value=0.5, step=0.1)),
         
-        # Second Conv1D layer (optional)
+        # Second Conv1D layer
         layers.Conv1D(
             filters=hp.Int('cnn_filters_2', min_value=64, max_value=256, step=64),
             kernel_size=hp.Int('kernel_size_2', min_value=2, max_value=5),

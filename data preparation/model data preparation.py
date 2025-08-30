@@ -327,5 +327,4 @@ if __name__ == "__main__":
     
 # This script prepares water quality data for modeling by calculating the Water Quality Index (WQI),
 # normalizing features, creating sequences for time series prediction, and saving the processed data.
-# It includes improved file detection, error handling, and detailed logging for better user experience.
 # The output is saved in a structured format for easy access during model training.

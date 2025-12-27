@@ -56,14 +56,6 @@ def get_file_path(file_description, file_type="CSV"):
                     print(f"   Error listing files: {e}")
 
 def clean_and_normalize(file_path):
-    """
-    Comprehensive data cleaning function that addresses all required tasks:
-    1. Handle missing values (gaps in time series)
-    2. Fill remaining missing values
-    3. Detect and remove outliers
-    4. Ensure consistent timestamp format
-    5. Check and correct data types
-    """
     print(f"\n📋 Processing file: {file_path}")
     
     try:
@@ -96,7 +88,7 @@ def clean_and_normalize(file_path):
     if not has_location:
         print("📍 No location column found - will process as single dataset")
 
-    # TASK 4: ENSURE CONSISTENT TIMESTAMP FORMAT
+    # ENSURE CONSISTENT TIMESTAMP FORMAT
     print("📅 Task 4: Converting timestamps to standardized format...")
 
     # Handle climate data with YEAR and MONTH columns
@@ -165,7 +157,7 @@ def clean_and_normalize(file_path):
             if has_location:
                 location_info = location_info[df.index]
 
-    # TASK 5: CHECK AND CORRECT DATA TYPES
+    # CHECK AND CORRECT DATA TYPES
     print("🔢 Task 5: Checking and correcting data types...")
 
     # Process data by location if Location column exists
@@ -198,7 +190,7 @@ def clean_and_normalize(file_path):
             if numeric_conversions > 0:
                 print(f"   ✓ Converted {numeric_conversions} columns to numeric format")
 
-            # TASK 1: HANDLE MISSING VALUES (GAPS IN TIME SERIES)
+            # HANDLE MISSING VALUES (GAPS IN TIME SERIES)
             if "timestamp" in subset.columns:
                 print("🕐 Task 1: Handling gaps in time series using time-based patterns...")
 
@@ -221,7 +213,7 @@ def clean_and_normalize(file_path):
                 if actual_location_column != 'Location':
                     subset_work.rename(columns={actual_location_column: 'Location'}, inplace=True)
 
-            # TASK 2: FILL REMAINING MISSING VALUES
+            # FILL REMAINING MISSING VALUES
             print("🔄 Task 2: Filling remaining missing values using forward/backward fill...")
 
             # Separate location column before filling
@@ -266,7 +258,7 @@ def clean_and_normalize(file_path):
                 normalized_by_location[location] = minimal_entry.copy()
                 continue
 
-            # TASK 3: DETECT AND REMOVE OUTLIERS
+            # DETECT AND REMOVE OUTLIERS
             print("🎯 Task 3: Detecting and removing outliers (>3 standard deviations)...")
 
             # Only apply outlier detection to numeric columns (exclude Location)
@@ -315,7 +307,7 @@ def clean_and_normalize(file_path):
     else:  # Process entire dataframe if no Location column
         print("📊 Processing entire dataset (no location grouping)")
 
-        # TASK 5: Convert to numeric data types
+        # Convert to numeric data types
         numeric_conversions = 0
         for col in df.columns:
             if col != "timestamp":
@@ -327,7 +319,7 @@ def clean_and_normalize(file_path):
         if numeric_conversions > 0:
             print(f"   ✓ Converted {numeric_conversions} columns to numeric format")
 
-        # TASK 1: Handle gaps in time series
+        # Handle gaps in time series
         if "timestamp" in df.columns:
             print("🕐 Task 1: Handling gaps in time series using time-based patterns...")
             df = df.set_index("timestamp").resample("D").mean()
@@ -338,7 +330,7 @@ def clean_and_normalize(file_path):
         else:
             print("   ⚠️ No timestamp column found, skipping time series gap handling")
 
-        # TASK 2: Fill remaining missing values
+        # Fill remaining missing values
         print("🔄 Task 2: Filling remaining missing values using forward/backward fill...")
         df_filled = df.ffill().bfill()
 
@@ -355,7 +347,7 @@ def clean_and_normalize(file_path):
             print(f"   ❌ No valid data remaining after cleaning")
             return pd.DataFrame(), pd.DataFrame(), {}
 
-        # TASK 3: Detect and remove outliers
+        # Detect and remove outliers
         print("🎯 Task 3: Detecting and removing outliers (>3 standard deviations)...")
         numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) > 0:

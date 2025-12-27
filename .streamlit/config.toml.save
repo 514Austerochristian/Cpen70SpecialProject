@@ -1,0 +1,49 @@
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+port = 8501
+
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"
+
+[logger]
+level = "error"
+```
+
+6. **Save the file**:
+   - Press `Ctrl + X`
+   - Press `Y` to confirm
+   - Press `Enter` to save
+
+## Option 2: Using VS Code Interface (Easier!)
+
+1. **In the VS Code Explorer** (left sidebar), right-click on your project root folder
+2. **Click "New Folder"** and name it `.streamlit`
+3. **Right-click on the `.streamlit` folder**
+4. **Click "New File"** and name it `config.toml`
+5. **Open the file** and paste the configuration I provided above
+6. **Save the file** (`Ctrl + S` or `Cmd + S`)
+
+## Verify the Setup
+
+After creating the file, your project structure should look like this:
+```
+Cpen70SpecialProject/
+├── .streamlit/
+│   └── config.toml
+├── dashboard/
+│   └── your_dashboard.py
+├── models/
+├── data/
+/workspaces/Cpen70SpecialProject/.venv/bin/python /workspaces/Cpen70SpecialProject/dashboard/app.py
+/workspaces/Cpen70SpecialProject/.venv/bin/python /workspaces/Cpen70SpecialProject/dashboard/app.py
+/workspaces/Cpen70SpecialProject/.venv/bin/python /workspaces/Cpen70SpecialProject/dashboard/app.py
+/workspaces/Cpen70SpecialProject/.venv/bin/python /workspaces/Cpen70SpecialProject/dashboard/app.py
+
+└── .../workspaces/Cpen70SpecialProject/.venv/bin/python /workspaces/Cpen70SpecialProject/dashboard/app.py
+
+^X/workspaces/Cpen70SpecialProject/.venv/bin/python /workspaces/Cpen70SpecialProject/dashboard/app.py
+/workspaces/Cpen70SpecialProject/.venv/bin/python /workspaces/Cpen70SpecialProject/dashboard/app.py
+

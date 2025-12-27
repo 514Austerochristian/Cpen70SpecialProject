@@ -1,0 +1,30 @@
+"""This folder breaks down the Application codebase to streamline the changes made on any part of the app"""
+
+dashboard/
+├── app.py                      # Main entry point (navigation only)
+├── config/
+│   ├── __init__.py
+│   ├── settings.py             # Page config, CSS, constants
+│   └── parameters.py           # Parameter definitions
+├── data/
+│   ├── __init__.py
+│   ├── loader.py               # Data loading functions
+│   └── utils.py                # Data utility functions
+├── models/
+│   ├── __init__.py
+│   ├── loader.py               # Model loading functions
+│   ├── prediction.py           # Prediction functions
+│   └── comparison.py           # Model comparison logic
+├── pages/
+│   ├── __init__.py
+│   ├── home.py                 # Home page
+│   ├── model_info.py           # Model information page
+│   └── visualization.py        # Data visualization page
+├── ui/
+│   ├── __init__.py
+│   ├── sidebar.py              # Sidebar components
+│   └── components.py           # Reusable UI components
+└── utils/
+    ├── __init__.py
+    ├── paths.py                # Path configurations
+    └── helpers.py              # Helper functions

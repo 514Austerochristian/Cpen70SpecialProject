@@ -153,17 +153,31 @@ def calculate_wqi(df, weights):
     wqi = weighted_values.sum(axis=1)
     return wqi
 
-def create_sequences(data, target_col, look_back=12):
+def create_sequences(data, target_col, location_col, look_back=12):
     """
-    Create sequences for time series models (e.g., LSTM)
+    Create sequences for time series models (e.g., LSTM) grouped by location
     """
+    X, y, locations = [], [], []
     
-    X, y = [], []
-    for i in range(len(data) - look_back):
-        X.append(data.iloc[i:(i + look_back)].values)
-        y.append(data.iloc[i + look_back][target_col])
+    # Group by location if location column exists
+    if location_col in data.columns:
+        for location in data[location_col].unique():
+            location_data = data[data[location_col] == location].copy()
+            location_data = location_data.drop(columns=[location_col])  # Drop location for sequence creation
+            
+            # Create sequences for this location
+            for i in range(len(location_data) - look_back):
+                X.append(location_data.iloc[i:(i + look_back)].values)
+                y.append(location_data.iloc[i + look_back][target_col])
+                locations.append(location)
+    else:
+        # No location column, process all data together
+        for i in range(len(data) - look_back):
+            X.append(data.iloc[i:(i + look_back)].values)
+            y.append(data.iloc[i + look_back][target_col])
+            locations.append('unknown')
     
-    return np.array(X), np.array(y)
+    return np.array(X), np.array(y), np.array(locations)
 
 def main():
     """
@@ -178,14 +192,41 @@ def main():
         
         # Load the processed data
         print(f"\n📂 Loading data from: {data_path}")
-        df = pd.read_csv(data_path, index_col=0, parse_dates=True)
+        df = pd.read_csv(data_path)
+        
+        # Check if index should be parsed as dates
+        if df.columns[0] in ['timestamp', 'date', 'Date', 'datetime']:
+            df = pd.read_csv(data_path, index_col=0, parse_dates=True)
+        
         print(f"✅ Loaded {len(df)} rows and {len(df.columns)} columns")
+        
+        # Detect location column (case-insensitive)
+        location_col = None
+        for col in df.columns:
+            if col.lower() == 'location':
+                location_col = col
+                break
+        
+        if location_col:
+            # Standardize column name to lowercase 'location'
+            if location_col != 'location':
+                df.rename(columns={location_col: 'location'}, inplace=True)
+                location_col = 'location'
+            
+            unique_locations = df[location_col].unique()
+            print(f"📍 Found location column with {len(unique_locations)} unique locations:")
+            for loc in unique_locations:
+                count = len(df[df[location_col] == loc])
+                print(f"   - {loc}: {count} rows")
+        else:
+            print("⚠️ No location column found - processing as single dataset")
         
         # Define weights for WQI calculation
         weights = {
             'pH Level': 0.15,
             'Dissolved Oxygen (mg/L)': 0.25,
             'Nitrate-N/Nitrite-N (mg/L)': 0.10,
+            'Nitrate-N/Nitrite-N  (mg/L)': 0.10,  # Handle spacing variation
             'Ammonia (mg/L)': 0.15,
             'Phosphate (mg/L)': 0.10,
             'Surface Water Temp (°C)': 0.05,
@@ -196,86 +237,123 @@ def main():
         # Calculate WQI
         print("\n🧮 Calculating Water Quality Index (WQI)...")
         
-        # Ensure all columns used in WQI are numeric
         print('DataFrame shape before imputation:', df.shape)
         print('NaN counts before imputation:')
         print(df.isna().sum())
         
+        # Convert weight columns to numeric
         for col in weights.keys():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             else:
                 print(f"⚠️ Warning: Column '{col}' not found in data")
         
-        # Apply forward fill, then backward fill to handle missing values in WQI columns
-        wqi_cols = [col for col in weights.keys() if col in df.columns]
-        df[wqi_cols] = df[wqi_cols].ffill().bfill()
+        # Separate location column before imputation
+        location_data = None
+        if location_col and location_col in df.columns:
+            location_data = df[location_col].copy()
+            df_processing = df.drop(columns=[location_col])
+        else:
+            df_processing = df.copy()
         
-        print('DataFrame shape after imputation:', df.shape)
+        # Apply forward fill, then backward fill
+        wqi_cols = [col for col in weights.keys() if col in df_processing.columns]
+        df_processing[wqi_cols] = df_processing[wqi_cols].ffill().bfill()
+        
+        print('DataFrame shape after imputation:', df_processing.shape)
         print('NaN counts after imputation:')
-        print(df.isna().sum())
+        print(df_processing.isna().sum())
         
         # Impute missing values in non-WQI columns
-        non_wqi_cols = [col for col in df.columns if col not in wqi_cols]
-        df[non_wqi_cols] = df[non_wqi_cols].fillna(method='ffill').fillna(method='bfill')
+        non_wqi_cols = [col for col in df_processing.columns if col not in wqi_cols]
+        df_processing[non_wqi_cols] = df_processing[non_wqi_cols].ffill().bfill()
         
-        print('DataFrame shape after imputing non-WQI columns:', df.shape)
+        print('DataFrame shape after imputing non-WQI columns:', df_processing.shape)
         print('NaN counts after imputing non-WQI columns:')
-        print(df.isna().sum())
+        print(df_processing.isna().sum())
         
         # Calculate WQI using available columns
-        available_weights = {col: weight for col, weight in weights.items() if col in df.columns}
-        df['WQI'] = calculate_wqi(df, available_weights)
+        available_weights = {col: weight for col, weight in weights.items() if col in df_processing.columns}
+        df_processing['WQI'] = calculate_wqi(df_processing, available_weights)
         
-        print(f"✅ WQI calculated - Range: {df['WQI'].min():.2f} to {df['WQI'].max():.2f}")
+        print(f"✅ WQI calculated - Range: {df_processing['WQI'].min():.2f} to {df_processing['WQI'].max():.2f}")
+        
+        # Add location column back
+        if location_data is not None:
+            df_processing['location'] = location_data.values
+            print("✅ Location column preserved in processed data")
         
         # Handle missing values (drop remaining NaN)
-        initial_rows = len(df)
-        df = df.dropna()
-        final_rows = len(df)
+        initial_rows = len(df_processing)
+        df_processing = df_processing.dropna()
+        final_rows = len(df_processing)
         
         if initial_rows != final_rows:
             print(f"🔄 Dropped {initial_rows - final_rows} rows with missing values")
         
-        # Convert non-numeric columns to numeric using one-hot encoding
-        non_numeric_cols = df.select_dtypes(include=['object', 'category']).columns
+        # Convert non-numeric columns to numeric using one-hot encoding (except location)
+        columns_to_exclude = ['location'] if 'location' in df_processing.columns else []
+        non_numeric_cols = df_processing.select_dtypes(include=['object', 'category']).columns
+        non_numeric_cols = [col for col in non_numeric_cols if col not in columns_to_exclude]
+        
         if len(non_numeric_cols) > 0:
             print(f"\n🔄 Converting non-numeric columns to numeric: {list(non_numeric_cols)}")
-            df = pd.get_dummies(df, columns=non_numeric_cols)
+            df_processing = pd.get_dummies(df_processing, columns=non_numeric_cols)
             print("✅ Non-numeric columns converted using one-hot encoding")
 
-        # Normalize features
+        # Normalize features (excluding location column)
         print("\n📊 Normalizing features...")
         scaler = MinMaxScaler()
-        numeric_cols = df.select_dtypes(include=['float64', 'int64', 'uint8']).columns
-        df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+        
+        # Separate location before normalization
+        if 'location' in df_processing.columns:
+            location_preserved = df_processing['location'].copy()
+            numeric_cols = df_processing.select_dtypes(include=['float64', 'int64', 'uint8']).columns
+            df_processing[numeric_cols] = scaler.fit_transform(df_processing[numeric_cols])
+            # Keep location as is (not normalized)
+            df_processing['location'] = location_preserved
+        else:
+            numeric_cols = df_processing.select_dtypes(include=['float64', 'int64', 'uint8']).columns
+            df_processing[numeric_cols] = scaler.fit_transform(df_processing[numeric_cols])
+        
         print("✅ Features normalized using MinMaxScaler")
 
         # Create output directory
         output_dir = Path('data/processed')
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Save the processed DataFrame to CSV
+        # Save the processed DataFrame to CSV with location column
         output_csv = output_dir / 'model_processed_data.csv'
-        df.to_csv(output_csv, index=True)
+        df_processing.to_csv(output_csv, index=True)
         print(f"✅ Processed data saved to: {output_csv}")
+        
+        if 'location' in df_processing.columns:
+            print(f"✅ Location column included in output file")
+            print(f"   Locations preserved: {sorted(df_processing['location'].unique())}")
         
         # Create sequences for time series models (e.g., LSTM)
         print(f"\n🔄 Creating sequences for time series prediction...")
-        X, y = create_sequences(df, 'WQI', look_back=12)
+        
+        # Ensure WQI column exists
+        if 'WQI' not in df_processing.columns:
+            raise KeyError("WQI column not found in the DataFrame. Ensure WQI is calculated before creating sequences.")
+        
+        # Create sequences with location tracking
+        X, y, locations = create_sequences(df_processing, 'WQI', 'location' if 'location' in df_processing.columns else None, look_back=12)
         print(f"✅ Created {len(X)} sequences with look-back window of 12")
         
-        # Create sequences for water quality index (WQI)
-        if 'WQI' not in df.columns:
-            raise KeyError("WQI column not found in the DataFrame. Ensure WQI is calculated before creating sequences.")
-        print(f"\n📊 Creating sequences for WQI...")
-        if 'WQI' in df.columns:
-            X, y = create_sequences(df, 'WQI', look_back=12)
-            print(f"✅ Created {len(X)} sequences for WQI with look-back window of 12")
+        if 'location' in df_processing.columns:
+            print(f"✅ Location information preserved for each sequence")
+            unique_seq_locations = np.unique(locations)
+            for loc in unique_seq_locations:
+                loc_count = np.sum(locations == loc)
+                print(f"   - {loc}: {loc_count} sequences")
 
         # Split data into train/test sets (80/20 split)
         print(f"\n✂️ Splitting data into train/test sets (80/20 split)...")
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test, loc_train, loc_test = train_test_split(
+            X, y, locations, test_size=0.2, random_state=42
+        )
         
         print(f"✅ Training samples: {len(X_train)}")
         print(f"✅ Testing samples: {len(X_test)}")
@@ -286,6 +364,9 @@ def main():
         np.save(output_dir / 'X_test.npy', X_test.astype(np.float32))
         np.save(output_dir / 'y_train.npy', y_train.astype(np.float32))
         np.save(output_dir / 'y_test.npy', y_test.astype(np.float32))
+        np.save(output_dir / 'locations_train.npy', loc_train)
+        np.save(output_dir / 'locations_test.npy', loc_test)
+        print("✅ Location arrays saved for train/test sets")
         
         # Save scaler for future use
         import joblib
@@ -295,12 +376,17 @@ def main():
         # Print final statistics
         print(f"\n📋 Final Statistics:")
         print('Non-null counts for all columns after processing:')
-        print(df.count())
+        print(df_processing.count())
         
         print(f"\n🎉 DATA PREPARATION COMPLETED!")
-        print(f"✅ Processed data shape: {df.shape}")
+        print(f"✅ Processed data shape: {df_processing.shape}")
         print(f"✅ Training sequences: {X_train.shape}")
         print(f"✅ Testing sequences: {X_test.shape}")
+        
+        if 'location' in df_processing.columns:
+            print(f"✅ Location column: PRESERVED")
+            print(f"✅ Unique locations in output: {len(df_processing['location'].unique())}")
+        
         print(f"✅ All files saved in: {output_dir.absolute()}")
         
         print(f"\n🚀 Ready for model training!")
@@ -309,6 +395,8 @@ def main():
         print(f"   X_test = np.load('{output_dir}/X_test.npy')")
         print(f"   y_train = np.load('{output_dir}/y_train.npy')")
         print(f"   y_test = np.load('{output_dir}/y_test.npy')")
+        print(f"   loc_train = np.load('{output_dir}/locations_train.npy')")
+        print(f"   loc_test = np.load('{output_dir}/locations_test.npy')")
         
     except FileNotFoundError as e:
         print(f"❌ File not found: {e}")
@@ -324,7 +412,3 @@ def main():
 if __name__ == "__main__":
     # run the main data preparation pipeline:
     main()
-    
-# This script prepares water quality data for modeling by calculating the Water Quality Index (WQI),
-# normalizing features, creating sequences for time series prediction, and saving the processed data.
-# The output is saved in a structured format for easy access during model training.
